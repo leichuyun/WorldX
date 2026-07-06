@@ -153,7 +153,9 @@
     "collapseTitle": "收起近期对话",
     "latestEnded": "最近一轮已结束",
     "latestOngoing": "最近一轮进行中",
-    "innerMonologueTitle": "内心 OS"
+    "innerMonologueTitle": "内心 OS",
+    "styleToggleToIM": "切换为聊天气泡样式",
+    "styleToggleToClassic": "切换为经典列表样式"
   },
   "mapControls": {
     "zoomOut": "缩小",

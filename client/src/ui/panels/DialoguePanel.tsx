@@ -8,6 +8,10 @@ import type {
   SimulationEvent,
 } from "../../types/api";
 import { buildCharacterNameMap } from "../utils/event-format";
+import { DialogueChatView, type TimedTurn } from "./DialogueChatView";
+
+const DIALOGUE_STYLE_STORAGE_KEY = "worldx.dialogueStyle";
+type DialogueStyle = "classic" | "im";
 
 interface DialogueSession {
   conversationId: string;
@@ -37,7 +41,25 @@ export function DialoguePanel({
   const [characters, setCharacters] = useState<CharacterInfo[]>([]);
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
+  const [dialogueStyle, setDialogueStyle] = useState<DialogueStyle>(() =>
+    typeof localStorage !== "undefined" &&
+    localStorage.getItem(DIALOGUE_STYLE_STORAGE_KEY) === "im"
+      ? "im"
+      : "classic",
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const toggleDialogueStyle = () => {
+    setDialogueStyle((prev) => {
+      const next: DialogueStyle = prev === "im" ? "classic" : "im";
+      try {
+        localStorage.setItem(DIALOGUE_STYLE_STORAGE_KEY, next);
+      } catch {
+        // Ignore storage failures (private mode / disabled storage).
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     apiClient.getCharacters().then(setCharacters).catch(console.warn);
@@ -114,6 +136,42 @@ export function DialoguePanel({
     () => (sessions.length > MAX_VISIBLE_TABS ? sessions.slice(0, MAX_VISIBLE_TABS) : sessions),
     [sessions],
   );
+
+  // Per-conversation turns carrying each turn's own time, used only by the
+  // opt-in IM view. Kept separate from `sessions` so the classic path is
+  // untouched. Mirrors the same index-based merge as `sessions`.
+  const timedTurnsByConversation = useMemo(() => {
+    if (dialogueStyle !== "im") return new Map<string, TimedTurn[]>();
+    const map = new Map<string, TimedTurn[]>();
+
+    for (const event of events) {
+      const dialogue = event.data as DialogueEventData | undefined;
+      if (!dialogue?.conversationId || !Array.isArray(dialogue.turns)) continue;
+
+      const absTick = absoluteTick(event.gameDay, event.gameTick, ticksPerScene);
+      const toTimed = (turn: DialogueTurn): TimedTurn => ({
+        ...turn,
+        gameDay: event.gameDay,
+        gameTick: event.gameTick,
+        timeString: event.timeString,
+        absTick,
+      });
+
+      const existing = map.get(dialogue.conversationId);
+      if (!existing || dialogue.phase === "complete") {
+        map.set(dialogue.conversationId, dialogue.turns.map(toTimed));
+        continue;
+      }
+
+      const merged = [...existing];
+      dialogue.turns.forEach((turn, idx) => {
+        merged[dialogue.turnIndexStart + idx] = toTimed(turn);
+      });
+      map.set(dialogue.conversationId, merged);
+    }
+
+    return map;
+  }, [dialogueStyle, events, ticksPerScene]);
 
   useEffect(() => {
     if (activeTab && !visibleSessions.some((s) => s.conversationId === activeTab)) {
@@ -196,6 +254,42 @@ export function DialoguePanel({
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleDialogueStyle();
+            }}
+            title={
+              dialogueStyle === "im"
+                ? t("dialogue.styleToggleToClassic")
+                : t("dialogue.styleToggleToIM")
+            }
+            aria-label={
+              dialogueStyle === "im"
+                ? t("dialogue.styleToggleToClassic")
+                : t("dialogue.styleToggleToIM")
+            }
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 24,
+              height: 24,
+              borderRadius: "50%",
+              border: "1px solid rgba(255,255,255,0.1)",
+              background:
+                dialogueStyle === "im"
+                  ? "rgba(116,185,255,0.22)"
+                  : "rgba(255,255,255,0.05)",
+              color: dialogueStyle === "im" ? "#74b9ff" : "#bbb",
+              fontSize: 13,
+              lineHeight: 1,
+              cursor: "pointer",
+              pointerEvents: "auto",
+            }}
+          >
+            💬
+          </button>
           <span style={{ color: "#888", fontSize: 11 }}>
             {t("dialogue.sessionCount", { count: visibleSessions.length })}
           </span>
@@ -328,50 +422,59 @@ export function DialoguePanel({
             </button>
           </div>
 
-          <div
-            ref={scrollRef}
-            className="dialogue-scroll"
-            style={{ overflow: "auto", flex: 1, paddingRight: 4 }}
-          >
-            {current.turns.map((turn, i) => (
-              <div
-                key={i}
-                style={{
-                  padding: "6px 0",
-                  borderBottom:
-                    i < current.turns.length - 1
-                      ? "1px solid rgba(255,255,255,0.06)"
-                      : "none",
-                  animation: "fadeIn 0.4s ease",
-                }}
-              >
-                <span
-                  style={{ color: "#74b9ff", fontSize: 12, fontWeight: 600 }}
+          {dialogueStyle === "im" ? (
+            <DialogueChatView
+              turns={timedTurnsByConversation.get(current.conversationId) ?? []}
+              characterNames={characterNames}
+              characters={characters}
+              scrollRef={scrollRef}
+            />
+          ) : (
+            <div
+              ref={scrollRef}
+              className="dialogue-scroll"
+              style={{ overflow: "auto", flex: 1, paddingRight: 4 }}
+            >
+              {current.turns.map((turn, i) => (
+                <div
+                  key={i}
+                  style={{
+                    padding: "6px 0",
+                    borderBottom:
+                      i < current.turns.length - 1
+                        ? "1px solid rgba(255,255,255,0.06)"
+                        : "none",
+                    animation: "fadeIn 0.4s ease",
+                  }}
                 >
-                  {characterNames[turn.speaker] || turn.speaker}
-                </span>
-                <div style={{ color: "#e0e0e0", fontSize: 13, marginTop: 2 }}>
-                  {turn.content}
-                </div>
-                {turn.innerMonologue && (
-                  <div
-                    style={{
-                      color: "#b39ddb",
-                      fontSize: 12,
-                      fontStyle: "italic",
-                      marginTop: 4,
-                      paddingLeft: 12,
-                      borderLeft: "2px dashed rgba(179, 157, 219, 0.45)",
-                      opacity: 0.88,
-                    }}
-                    title={t("dialogue.innerMonologueTitle")}
+                  <span
+                    style={{ color: "#74b9ff", fontSize: 12, fontWeight: 600 }}
                   >
-                    💭 {turn.innerMonologue}
+                    {characterNames[turn.speaker] || turn.speaker}
+                  </span>
+                  <div style={{ color: "#e0e0e0", fontSize: 13, marginTop: 2 }}>
+                    {turn.content}
                   </div>
-                )}
-              </div>
-            ))}
-          </div>
+                  {turn.innerMonologue && (
+                    <div
+                      style={{
+                        color: "#b39ddb",
+                        fontSize: 12,
+                        fontStyle: "italic",
+                        marginTop: 4,
+                        paddingLeft: 12,
+                        borderLeft: "2px dashed rgba(179, 157, 219, 0.45)",
+                        opacity: 0.88,
+                      }}
+                      title={t("dialogue.innerMonologueTitle")}
+                    >
+                      💭 {turn.innerMonologue}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
