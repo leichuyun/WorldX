@@ -9,9 +9,7 @@ import type {
 } from "../../types/api";
 import { buildCharacterNameMap } from "../utils/event-format";
 import { DialogueChatView, type TimedTurn } from "./DialogueChatView";
-
-const DIALOGUE_STYLE_STORAGE_KEY = "worldx.dialogueStyle";
-type DialogueStyle = "classic" | "im";
+import { useDialogueStyle, toggleDialogueStyle } from "../hooks/useDialogueStyle";
 
 interface DialogueSession {
   conversationId: string;
@@ -41,25 +39,8 @@ export function DialoguePanel({
   const [characters, setCharacters] = useState<CharacterInfo[]>([]);
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
-  const [dialogueStyle, setDialogueStyle] = useState<DialogueStyle>(() =>
-    typeof localStorage !== "undefined" &&
-    localStorage.getItem(DIALOGUE_STYLE_STORAGE_KEY) === "im"
-      ? "im"
-      : "classic",
-  );
+  const dialogueStyle = useDialogueStyle();
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  const toggleDialogueStyle = () => {
-    setDialogueStyle((prev) => {
-      const next: DialogueStyle = prev === "im" ? "classic" : "im";
-      try {
-        localStorage.setItem(DIALOGUE_STYLE_STORAGE_KEY, next);
-      } catch {
-        // Ignore storage failures (private mode / disabled storage).
-      }
-      return next;
-    });
-  };
 
   useEffect(() => {
     apiClient.getCharacters().then(setCharacters).catch(console.warn);
@@ -158,8 +139,36 @@ export function DialoguePanel({
       });
 
       const existing = map.get(dialogue.conversationId);
-      if (!existing || dialogue.phase === "complete") {
+
+      // First time we see this conversation: stamp every turn with this event's
+      // time (for a seed event these are each turn's real tick).
+      if (!existing) {
         map.set(dialogue.conversationId, dialogue.turns.map(toTimed));
+        continue;
+      }
+
+      // The complete event carries the full transcript stamped with the
+      // conversation's END time. Take its final content as authoritative but
+      // preserve each turn's original time recorded during the incremental
+      // phase, so cross-tick timelines don't collapse to the last tick.
+      // Missing indices (turns we never saw incrementally) fall back to the
+      // complete event's time.
+      if (dialogue.phase === "complete") {
+        map.set(
+          dialogue.conversationId,
+          dialogue.turns.map((turn, idx) => {
+            const prior = existing[idx];
+            return prior
+              ? {
+                  ...turn,
+                  gameDay: prior.gameDay,
+                  gameTick: prior.gameTick,
+                  timeString: prior.timeString,
+                  absTick: prior.absTick,
+                }
+              : toTimed(turn);
+          }),
+        );
         continue;
       }
 

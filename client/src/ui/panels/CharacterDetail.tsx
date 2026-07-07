@@ -16,8 +16,7 @@ import {
   formatEventType,
 } from "../utils/event-format";
 import { CharacterAvatar } from "../components/CharacterAvatar";
-
-const DIALOGUE_STYLE_STORAGE_KEY = "worldx.dialogueStyle";
+import { useDialogueStyle } from "../hooks/useDialogueStyle";
 
 type Tab = "history" | "memory";
 type DialogueTurnRecord = {
@@ -99,9 +98,7 @@ export function CharacterDetail({
   const [editFlash, setEditFlash] = useState<string | null>(null);
   const { t } = useTranslation();
 
-  const imStyle =
-    typeof localStorage !== "undefined" &&
-    localStorage.getItem(DIALOGUE_STYLE_STORAGE_KEY) === "im";
+  const imStyle = useDialogueStyle() === "im";
 
   if (!detail) return null;
 
