@@ -25,6 +25,16 @@ function sameTimeBucket(a: TimedTurn, b: TimedTurn): boolean {
   return a.gameDay === b.gameDay && periodLabel(a) === periodLabel(b);
 }
 
+function isRenderableTurn(turn: TimedTurn | null | undefined): turn is TimedTurn {
+  return (
+    !!turn &&
+    typeof turn.gameDay === "number" &&
+    typeof turn.gameTick === "number" &&
+    typeof turn.speaker === "string" &&
+    typeof turn.content === "string"
+  );
+}
+
 export function DialogueChatView({
   turns,
   characterNames,
@@ -37,11 +47,12 @@ export function DialogueChatView({
   scrollRef: RefObject<HTMLDivElement | null>;
 }) {
   const { t } = useTranslation();
+  const renderableTurns = turns.filter(isRenderableTurn);
 
   return (
     <div ref={scrollRef} className="dialogue-scroll" style={scrollStyle}>
-      {turns.map((turn, i) => {
-        const prev = i > 0 ? turns[i - 1] : null;
+      {renderableTurns.map((turn, i) => {
+        const prev = i > 0 ? renderableTurns[i - 1] : null;
         const showTimeSeparator = !prev || !sameTimeBucket(prev, turn);
         const mergedWithPrev =
           !!prev && !showTimeSeparator && prev.speaker === turn.speaker;

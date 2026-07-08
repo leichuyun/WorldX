@@ -26,6 +26,14 @@ function absoluteTick(day: number, tick: number, ticksPerScene: number): number 
   return (day - 1) * ticksPerScene + tick;
 }
 
+function isDialogueTurn(turn: DialogueTurn | null | undefined): turn is DialogueTurn {
+  return (
+    !!turn &&
+    typeof turn.speaker === "string" &&
+    typeof turn.content === "string"
+  );
+}
+
 export function DialoguePanel({
   events,
   ticksPerScene,
@@ -119,7 +127,7 @@ export function DialoguePanel({
   );
 
   // Per-conversation turns carrying each turn's own time, used only by the
-  // opt-in IM view. Kept separate from `sessions` so the classic path is
+  // IM view. Kept separate from `sessions` so the classic path is
   // untouched. Mirrors the same index-based merge as `sessions`.
   const timedTurnsByConversation = useMemo(() => {
     if (dialogueStyle !== "im") return new Map<string, TimedTurn[]>();
@@ -143,7 +151,7 @@ export function DialoguePanel({
       // First time we see this conversation: stamp every turn with this event's
       // time (for a seed event these are each turn's real tick).
       if (!existing) {
-        map.set(dialogue.conversationId, dialogue.turns.map(toTimed));
+        map.set(dialogue.conversationId, dialogue.turns.filter(isDialogueTurn).map(toTimed));
         continue;
       }
 
@@ -156,9 +164,10 @@ export function DialoguePanel({
       if (dialogue.phase === "complete") {
         map.set(
           dialogue.conversationId,
-          dialogue.turns.map((turn, idx) => {
+          dialogue.turns.flatMap((turn, idx) => {
+            if (!isDialogueTurn(turn)) return [];
             const prior = existing[idx];
-            return prior
+            return [prior
               ? {
                   ...turn,
                   gameDay: prior.gameDay,
@@ -166,7 +175,7 @@ export function DialoguePanel({
                   timeString: prior.timeString,
                   absTick: prior.absTick,
                 }
-              : toTimed(turn);
+              : toTimed(turn)];
           }),
         );
         continue;
@@ -174,6 +183,7 @@ export function DialoguePanel({
 
       const merged = [...existing];
       dialogue.turns.forEach((turn, idx) => {
+        if (!isDialogueTurn(turn)) return;
         merged[dialogue.turnIndexStart + idx] = toTimed(turn);
       });
       map.set(dialogue.conversationId, merged);
@@ -203,6 +213,9 @@ export function DialoguePanel({
     visibleSessions.find((s) => s.conversationId === activeTab) ??
     visibleSessions[0];
   const summarySession = collapsed ? visibleSessions[0] : current;
+  const currentTurns = current.turns.filter(isDialogueTurn);
+  const summaryTurns = summarySession.turns.filter(isDialogueTurn);
+  const summaryLatestTurn = summaryTurns[summaryTurns.length - 1];
 
   const getSessionLabel = (s: DialogueSession) => {
     const [a, b] = s.participants;
@@ -256,8 +269,8 @@ export function DialoguePanel({
           </div>
           {collapsed && (
             <div style={{ color: "#888", fontSize: 11, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {summarySession.turns.length > 0
-                ? `${characterNames[summarySession.turns[summarySession.turns.length - 1].speaker] || summarySession.turns[summarySession.turns.length - 1].speaker}: ${summarySession.turns[summarySession.turns.length - 1].content}`
+              {summaryLatestTurn
+                ? `${characterNames[summaryLatestTurn.speaker] || summaryLatestTurn.speaker}: ${summaryLatestTurn.content}`
                 : t("dialogue.noContent")}
             </div>
           )}
@@ -444,13 +457,13 @@ export function DialoguePanel({
               className="dialogue-scroll"
               style={{ overflow: "auto", flex: 1, paddingRight: 4 }}
             >
-              {current.turns.map((turn, i) => (
+              {currentTurns.map((turn, i) => (
                 <div
                   key={i}
                   style={{
                     padding: "6px 0",
                     borderBottom:
-                      i < current.turns.length - 1
+                      i < currentTurns.length - 1
                         ? "1px solid rgba(255,255,255,0.06)"
                         : "none",
                     animation: "fadeIn 0.4s ease",

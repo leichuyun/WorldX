@@ -7,14 +7,14 @@ const DIALOGUE_STYLE_EVENT = "worldx:dialogue-style";
 
 function getSnapshot(): DialogueStyle {
   try {
-    return localStorage.getItem(DIALOGUE_STYLE_STORAGE_KEY) === "im" ? "im" : "classic";
+    return localStorage.getItem(DIALOGUE_STYLE_STORAGE_KEY) === "classic" ? "classic" : "im";
   } catch {
-    return "classic";
+    return "im";
   }
 }
 
 function getServerSnapshot(): DialogueStyle {
-  return "classic";
+  return "im";
 }
 
 function subscribe(callback: () => void): () => void {
