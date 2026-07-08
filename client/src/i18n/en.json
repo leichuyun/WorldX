@@ -153,7 +153,9 @@
     "collapseTitle": "Collapse recent dialogues",
     "latestEnded": "Latest round ended",
     "latestOngoing": "Latest round ongoing",
-    "innerMonologueTitle": "Inner thoughts"
+    "innerMonologueTitle": "Inner thoughts",
+    "styleToggleToIM": "Switch to chat bubble view",
+    "styleToggleToClassic": "Switch to classic list view"
   },
   "mapControls": {
     "zoomOut": "Zoom out",
